@@ -15,9 +15,9 @@
 package cmd
 
 import (
-	"github.com/gobs/args"
-	"github.com/gobs/pretty"
-	"github.com/gobs/readline"
+	"github.com/calgaryscientific/args"
+	"github.com/calgaryscientific/pretty"
+	"github.com/calgaryscientific/readline"
 
 	"fmt"
 	"os"
@@ -396,7 +396,8 @@ func (cmd *Cmd) CmdLoop() {
 	for {
 		result := readline.ReadLine(&cmd.Prompt)
 		if result == nil {
-			break
+			//break
+			continue
 		}
 
 		line := strings.TrimSpace(*result)

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/gobs/cmd"
+	"github.com/calgaryscientific/cmd"
 
 	"fmt"
 	"strings"
