@@ -7,8 +7,9 @@
 	 commander := &Cmd{...}
 	 commander.Init()
 
-	 commander.Add(Command{...})
-	 commander.Add(Command{...})
+         cmd := NewCommand(name,option...)
+
+	 commander.Add(cmd)
 
 	 commander.CmdLoop()
 */
@@ -27,19 +28,101 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"runtime"
+	"flag"
 )
+
 
 //
 // This is used to describe a new command
 //
 type Command struct {
 	// command name
-	Name string
+	name string
 	// command description
-	Help string
+	help string
 	// the function to call to execute the command
-	Call func(string) bool
+	call func(*Command, string) bool
+	// list of possible sub commands
+	subCommands map[string]*Command
+	flags *flag.FlagSet
+
 }
+
+type option func(command *Command)
+
+func SetHelp(help string) option {
+	return func(command* Command) {
+		command.help = help
+	}
+}
+
+func SetFlag(flag string, value string, help string) option {
+	return func(command *Command) {
+		command.flags.String(flag,value,help)
+	}
+}
+
+func SetCmd(cmd func(command *Command, line string)(stop bool)) option {
+	return func(command* Command) {
+		command.call = cmd
+	}
+}
+
+func NewCommand(name string, opts ...option) (*Command){
+
+	command := &Command{
+		name: name,
+		help: "",
+		call:func(*Command, string) bool { return false },
+		subCommands: make(map[string]*Command),
+		flags: flag.NewFlagSet(name,flag.ContinueOnError) }
+
+	
+	for _, opt := range opts {
+		opt(command)
+	}
+
+	command.flags.Usage = func() {
+		fmt.Fprintf(os.Stderr,"%s -%s", command.name, command.help + "\n")
+		command.flags.PrintDefaults()
+	}
+
+	
+	return command
+}
+
+func (command *Command) AddSubCommand(name string, opts ...option) {
+
+	subcommand := NewCommand(name,opts...)
+	command.subCommands[name] = subcommand
+	
+	subcommand.flags.Usage = func() {
+		fmt.Fprintf(os.Stderr,"%s %s -%s", command.name, subcommand.name, subcommand.help + "\n")
+		subcommand.flags.PrintDefaults()
+	}
+
+}
+
+func (command* Command) GetFlag(name string)(string) {
+	flag := command.flags.Lookup(name)
+
+	if flag != nil {
+		return flag.Value.String()
+	}
+
+	return ""
+}
+
+func (command *Command) Usage() {
+	command.flags.Usage()
+
+	for _, subcommand := range command.subCommands {
+		fmt.Println()
+		subcommand.flags.Usage()
+	}
+}
+
 
 //
 // The context for command completion
@@ -121,7 +204,7 @@ type Cmd struct {
 	EnableShell bool
 
 	// this is the list of available commands indexed by command name
-	Commands map[string]Command
+	Commands map[string]*Command
 
 	///////// private stuff /////////////
 	completer    *Completer
@@ -191,10 +274,15 @@ func (cmd *Cmd) Init() {
 		cmd.Default = func(line string) { fmt.Printf("invalid command: %v\n", line) }
 	}
 
-	cmd.Commands = make(map[string]Command)
-	cmd.Add(Command{"help", `list available commands`, cmd.Help})
-	cmd.Add(Command{"echo", `echo input line`, cmd.Echo})
-	cmd.Add(Command{"go", `go cmd: asynchronous execution of cmd, or 'go [--start|--wait]'`, cmd.Go})
+	cmd.Commands = make(map[string]*Command)
+
+	help := NewCommand("help",
+		SetHelp(`list available commands`),
+		SetCmd(cmd.Help))
+	
+	cmd.Add(help)
+	//cmd.Add(Command{"echo", `echo input line`, cmd.Echo})
+	//cmd.Add(Command{"go", `go cmd: asynchronous execution of cmd, or 'go [--start|--wait]'`, cmd.Go})
 }
 
 //
@@ -234,8 +322,17 @@ func shellExec(command string) {
 	if len(args) < 1 {
 		fmt.Println("No command to exec")
 	} else {
-		cmd := exec.Command(args[0])
-		cmd.Args = args
+		var cmd *exec.Cmd;
+
+		if runtime.GOOS == "windows" {
+			cmdArgs := []string{"cmd","/C"}
+			cmdArgs = append(cmdArgs,args...)
+			cmd = exec.Command(cmdArgs[0],cmdArgs[1:]...)
+		} else {
+			cmd = exec.Command(args[0])
+			cmd.Args = args
+		}
+		
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -248,15 +345,15 @@ func shellExec(command string) {
 // Add a command to the command interpreter.
 // Overrides a command with the same name, if there was one
 //
-func (cmd *Cmd) Add(command Command) {
-	cmd.Commands[command.Name] = command
+func (cmd *Cmd) Add(command *Command) {
+	cmd.Commands[command.name] = command
 }
 
 //
 // Default help command.
 // It lists all available commands or it displays the help for the specified command
 //
-func (cmd *Cmd) Help(line string) (stop bool) {
+func (cmd *Cmd) Help(command* Command,line string) (stop bool) {
 	fmt.Println("")
 
 	if len(line) == 0 {
@@ -271,15 +368,41 @@ func (cmd *Cmd) Help(line string) (stop bool) {
 
 		tp.Println()
 	} else {
-		c, ok := cmd.Commands[line]
-		if ok {
-			if len(c.Help) > 0 {
-				fmt.Println(c.Help)
-			} else {
-				fmt.Println("No help for ", line)
+
+		
+
+		args := strings.Split(line," ")
+
+		
+		if len(args) > 1 {
+
+			if c, ok := cmd.Commands[args[0]]; ok {
+
+				cm, ok := c.subCommands[args[1]]
+				if ok {
+					if len(cm.help) > 0 {
+						cm.Usage()
+					} else {
+						fmt.Println("No help for ", line)
+					}
+				} else {
+					fmt.Println("unknown command")
+				}
 			}
+			
+			
 		} else {
-			fmt.Println("unknown command")
+			
+			c, ok := cmd.Commands[line]
+			if ok {
+				if len(c.help) > 0 {
+					c.Usage()
+				} else {
+					fmt.Println("No help for ", line)
+				}
+			} else {
+				fmt.Println("unknown command")
+			}
 		}
 	}
 
@@ -364,12 +487,42 @@ func (cmd *Cmd) OneCmd(line string) (stop bool) {
 
 	if ok {
 		var params string
-
+		
 		if len(parts) > 1 {
+			splitLine := strings.SplitN(parts[1], " ", 2)
+			subcmd := splitLine[0]
+
+
+			subcommand, ok := command.subCommands[subcmd]
+			if ok {
+				if len(splitLine) > 2 {
+
+					params = strings.TrimSpace(splitLine[1])
+				}
+
+				args := strings.Split(line," ")
+				subcommand.flags.Parse(args[2:])
+
+				stop = subcommand.call(subcommand,params)
+
+				subcommand.flags.VisitAll(func(flag *flag.Flag) {
+					flag.Value.Set(flag.DefValue)
+				})
+				return
+			}
+						
+
 			params = strings.TrimSpace(parts[1])
 		}
 
-		stop = command.Call(params)
+		args := strings.Split(line," ")
+		command.flags.Parse(args[1:])
+		stop = command.call(command,params)
+
+		command.flags.VisitAll(func(flag *flag.Flag) {
+			flag.Value.Set(flag.DefValue)
+		})
+		
 	} else {
 		cmd.Default(line)
 	}

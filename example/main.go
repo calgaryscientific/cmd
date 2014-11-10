@@ -29,7 +29,7 @@ func CompletionFunction(text string, line string, start, end int) []string {
 	return matches
 }
 
-func Exit(line string) (stop bool) {
+func Exit(command *cmd.Command,line string) (stop bool) {
 	fmt.Println("goodbye!")
 	return true
 }
@@ -38,26 +38,46 @@ func main() {
 	commander := &cmd.Cmd{HistoryFile: ".rlhistory", Complete: CompletionFunction, EnableShell: true}
 	commander.Init()
 
-	commander.Add(cmd.Command{
-		"ls",
-		`list stuff`,
-		func(line string) (stop bool) {
-			fmt.Println("listing stuff")
-			return
-		}})
 
-	commander.Add(cmd.Command{
-		Name: ">",
-		Help: `Set prompt`,
-		Call: func(line string) (stop bool) {
+	list := cmd.NewCommand(
+		"ls",
+		cmd.SetHelp(`list stuff`),
+		cmd.SetFlag("number","","only list this number of things"),
+		cmd.SetCmd(func(command *cmd.Command,line string) (stop bool) {
+
+			if num := command.GetFlag("number"); len(num) > 0 {
+				fmt.Println("list only",num, "stuff")
+			} else {
+				fmt.Println("listing stuff")
+			}
+			return
+		}))
+
+
+	
+
+	list.AddSubCommand("dir",
+		cmd.SetHelp("list directories only"),
+		cmd.SetFlag("h","","print human readable size of directory"),
+		cmd.SetCmd(func(command* cmd.Command,line string) (stop bool) {
+			fmt.Println("listing directories")
+			return
+		}))
+	
+	commander.Add(list)
+
+	commander.Add(cmd.NewCommand(
+		">",
+		cmd.SetHelp(`Set prompt`),
+		cmd.SetCmd(func(command *cmd.Command,line string) (stop bool) {
 			commander.Prompt = line
 			return
-		}})
+		})))
 
-	commander.Add(cmd.Command{
+	commander.Add(cmd.NewCommand(
 		"exit",
-		`terminate example`,
-		Exit})
+		cmd.SetHelp(`terminate example`),
+		cmd.SetCmd(Exit)))
 
 	commander.CmdLoop()
 }
