@@ -63,6 +63,12 @@ func SetFlag(flag string, value string, help string) option {
 	}
 }
 
+func SetBoolFlag(flag string, value bool, help string) option {
+	return func(command *Command) {
+		command.flags.Bool(flag,value,help)
+	}
+}
+
 func SetCmd(cmd func(command *Command, line string)(stop bool)) option {
 	return func(command* Command) {
 		command.call = cmd
@@ -112,6 +118,21 @@ func (command* Command) GetFlag(name string)(string) {
 	}
 
 	return ""
+}
+
+func (command* Command) GetBoolFlag(name string)(bool) {
+	flag := command.flags.Lookup(name)
+
+	if flag != nil {
+		val, err := strconv.ParseBool(flag.Value.String())
+		if err != nil {
+			return false
+		}
+
+		return val
+	}
+
+	return false
 }
 
 func (command *Command) Usage() {
