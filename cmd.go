@@ -288,7 +288,7 @@ func (cmd *Cmd) Init() {
 //
 // Add a completer that matches on command names
 //
-func (cmd *Cmd) addCommandCompleter() {
+func (cmd *Cmd) AddCommandCompleter() {
 	cmd.commandNames = make([]string, 0, len(cmd.Commands))
 
 	for n, _ := range cmd.Commands {
@@ -539,7 +539,7 @@ func (cmd *Cmd) CmdLoop() {
 		cmd.Prompt = "> "
 	}
 
-	cmd.addCommandCompleter()
+	cmd.AddCommandCompleter()
 
 	cmd.PreLoop()
 
