@@ -18,8 +18,7 @@ package cmd
 import (
 	"github.com/calgaryscientific/args"
 	"github.com/calgaryscientific/pretty"
-	"github.com/calgaryscientific/readline"
-
+	"github.com/peterh/liner"
 	"fmt"
 	"os"
 	"os/exec"
@@ -30,8 +29,8 @@ import (
 	"sync"
 	"runtime"
 	"flag"
+	"io"
 )
-
 
 //
 // This is used to describe a new command
@@ -145,47 +144,6 @@ func (command *Command) Usage() {
 }
 
 
-//
-// The context for command completion
-//
-type Completer struct {
-	// the list of words to match on
-	Words []string
-	// the list of current matches
-	Matches []string
-}
-
-//
-// Return a word matching the prefix
-// If there are multiple matches, index selects which one to pick
-//
-func (c *Completer) Complete(prefix string, index int) string {
-	if index == 0 {
-		c.Matches = c.Matches[:0]
-
-		for _, w := range c.Words {
-			if strings.HasPrefix(w, prefix) {
-				c.Matches = append(c.Matches, w)
-			}
-		}
-	}
-
-	if index < len(c.Matches) {
-		return c.Matches[index]
-	} else {
-		return ""
-	}
-}
-
-//
-// Create a Completer and initialize with list of words
-//
-func NewCompleter(words []string) (c *Completer) {
-	c = new(Completer)
-	c.Words = words
-	c.Matches = make([]string, 0, len(c.Words))
-	return
-}
 
 //
 // This the the "context" for the command interpreter
@@ -228,7 +186,10 @@ type Cmd struct {
 	Commands map[string]*Command
 
 	///////// private stuff /////////////
-	completer    *Completer
+
+
+	readline *liner.State
+	
 	commandNames []string
 
 	waitGroup          *sync.WaitGroup
@@ -236,24 +197,37 @@ type Cmd struct {
 }
 
 func (cmd *Cmd) readHistoryFile() {
-	if len(cmd.HistoryFile) == 0 {
+	if len(cmd.HistoryFile) == 0 || cmd.readline == nil {
 		// no history file
 		return
 	}
 
 	filepath := cmd.HistoryFile // start with current directory
 	if _, err := os.Stat(filepath); err == nil {
-		if err := readline.ReadHistoryFile(filepath); err != nil {
-			fmt.Println(err)
+
+		if f, err := os.Open(filepath); err == nil {
+			_, err := cmd.readline.ReadHistory(f)
+
+			if err != nil {
+				fmt.Println(err)
+			}
+			
+			f.Close()
 		}
 
 		return
+	} else {
+		fmt.Println(err)
 	}
 
 	filepath = path.Join(os.Getenv("HOME"), filepath) // then check home directory
 	if _, err := os.Stat(filepath); err == nil {
-		if err := readline.ReadHistoryFile(filepath); err != nil {
+
+
+		if f, err := os.Open(filepath); err == nil {
 			fmt.Println(err)
+			cmd.readline.ReadHistory(f)
+			f.Close()
 		}
 	}
 
@@ -262,14 +236,19 @@ func (cmd *Cmd) readHistoryFile() {
 }
 
 func (cmd *Cmd) writeHistoryFile() {
-	if len(cmd.HistoryFile) == 0 {
+	if len(cmd.HistoryFile) == 0 || cmd.readline == nil {
 		// no history file
 		return
 	}
 
-	if err := readline.WriteHistoryFile(cmd.HistoryFile); err != nil {
-		fmt.Println(err)
+
+	if f, err := os.Create(cmd.HistoryFile); err != nil {
+		fmt.Print("Error writing history file: ", err)
+	} else {
+		cmd.readline.WriteHistory(f)
+		f.Close()
 	}
+
 }
 
 //
@@ -295,6 +274,8 @@ func (cmd *Cmd) Init() {
 		cmd.Default = func(line string) { fmt.Printf("invalid command: %v\n", line) }
 	}
 
+	cmd.readline = liner.NewLiner()
+
 	cmd.Commands = make(map[string]*Command)
 
 	help := NewCommand("help",
@@ -319,20 +300,14 @@ func (cmd *Cmd) AddCommandCompleter() {
 	// sorting for Help()
 	sort.Strings(cmd.commandNames)
 
-	cmd.completer = NewCompleter(cmd.commandNames)
-	//readline.SetCompletionEntryFunction(completer.Complete)
-
-	readline.SetAttemptedCompletionFunction(cmd.attemptedCompletion)
-}
-
-func (cmd *Cmd) attemptedCompletion(text string, start, end int) []string {
-	if start == 0 { // this is the command to match
-		return readline.CompletionMatches(text, cmd.completer.Complete)
-	} else if cmd.Complete != nil {
-		return cmd.Complete(text, readline.GetLineBuffer(), start, end)
-	} else {
-		return nil
-	}
+	cmd.readline.SetCompleter(func(line string) (c []string) {
+		for _, n := range cmd.commandNames {
+			if strings.HasPrefix(n, strings.ToLower(line)) {
+				c = append(c, n)
+			}
+		}
+		return
+	})
 }
 
 //
@@ -568,19 +543,24 @@ func (cmd *Cmd) CmdLoop() {
 
 	// loop until ReadLine returns nil (signalling EOF)
 	for {
-		result := readline.ReadLine(&cmd.Prompt)
-		if result == nil {
-			//break
+		result, err := cmd.readline.Prompt(cmd.Prompt)
+		if err != nil {
+
+			if err == io.EOF {
+				break;
+			}
+			
+			fmt.Println(err)
 			continue
 		}
-
-		line := strings.TrimSpace(*result)
+		
+		line := strings.TrimSpace(result)
 		if line == "" {
 			cmd.EmptyLine()
 			continue
 		}
 
-		readline.AddHistory(*result) // allow user to recall this line
+		cmd.readline.AppendHistory(result) // allow user to recall this line
 
 		cmd.PreCmd(line)
 

@@ -38,6 +38,9 @@ func main() {
 	commander := &cmd.Cmd{HistoryFile: ".rlhistory", Complete: CompletionFunction, EnableShell: true}
 	commander.Init()
 
+	text := fmt.Sprintf("%c[%dm%s\033[0m", 0x1B, 31,"red bold")
+	cmd.ColorizeString(text)
+	fmt.Println()
 
 	list := cmd.NewCommand(
 		"ls",
