@@ -259,7 +259,7 @@ func (cmd *Cmd) Init() {
 		cmd.PreLoop = func() {}
 	}
 	if cmd.PostLoop == nil {
-		cmd.PostLoop = func() {}
+		cmd.PostLoop = func() { cmd.readline.Close() }
 	}
 	if cmd.PreCmd == nil {
 		cmd.PreCmd = func(string) {}
