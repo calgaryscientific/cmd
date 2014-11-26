@@ -16,8 +16,8 @@
 package cmd
 
 import (
-	"github.com/calgaryscientific/args"
-	"github.com/calgaryscientific/pretty"
+	"github.com/gobs/args"
+	"github.com/gobs/pretty"
 	"github.com/peterh/liner"
 	"fmt"
 	"os"
