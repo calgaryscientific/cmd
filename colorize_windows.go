@@ -1,11 +1,11 @@
 package cmd
 
 import (
-	"syscall"
-	"unsafe"
+	"bytes"
 	"fmt"
 	"strconv"
-	"bytes"
+	"syscall"
+	"unsafe"
 )
 
 var (
@@ -14,6 +14,7 @@ var (
 	procGetStdHandle               = kernel32.NewProc("GetStdHandle")
 	procGetConsoleScreenBufferInfo = kernel32.NewProc("GetConsoleScreenBufferInfo")
 	procSetConsoleTextAttribute    = kernel32.NewProc("SetConsoleTextAttribute")
+	procSetConsoleCursorPosition   = kernel32.NewProc("SetConsoleCursorPosition")
 
 	// ANSI to Windows color codes
 	w_BLACK     = 0
@@ -26,7 +27,7 @@ var (
 	w_YELLOW    = w_GREEN | w_RED
 	w_WHITE     = w_BLUE | w_GREEN | w_RED
 	ansi2WIN    = []int{w_BLACK, w_RED, w_GREEN, w_YELLOW, w_BLUE, w_MAGENTA, w_CYAN, w_WHITE}
-	
+
 	ansiRESET   = 0
 	ansiBOLD    = 1
 	ansiBLACK   = 30
@@ -38,7 +39,6 @@ var (
 	ansiCYAN    = 36
 	ansiGRAY    = 37
 	ansiWHITE   = 37
-
 )
 
 type coord struct {
@@ -61,6 +61,16 @@ type consoleScreenBuffer struct {
 	maxWinSize coord
 }
 
+type COORD uint32
+
+func coordToCOORD(crd coord) COORD {
+	return COORD(uint16(crd.x))<<16 | COORD(uint16(crd.y))
+}
+
+func COORDTocoord(crd COORD) coord {
+	return coord{int16(crd >> 16), int16(crd)}
+}
+
 func getConsoleScreenBufferInfo(hCon syscall.Handle) (sb consoleScreenBuffer, err error) {
 
 	rc, _, ec := syscall.Syscall(procGetConsoleScreenBufferInfo.Addr(), 2,
@@ -81,11 +91,22 @@ func setConsoleTextAttribute(hCon syscall.Handle, color int) (err error) {
 
 }
 
+func setConsoleCursorPosition(hCon syscall.Handle, position coord) (err error) {
+	pos := uint32(coordToCOORD(position))
+
+	rc, _, ec := syscall.Syscall(procSetConsoleCursorPosition.Addr(), 2,
+		uintptr(hCon), uintptr(pos), 0)
+	if rc == 0 {
+		err = syscall.Errno(ec)
+	}
+	return
+
+}
 
 func ColorizeString(text string) {
 
 	handle, _ := syscall.GetStdHandle(syscall.STD_OUTPUT_HANDLE)
-	
+
 	info, err := getConsoleScreenBufferInfo(handle)
 
 	if err != nil {
@@ -94,54 +115,54 @@ func ColorizeString(text string) {
 
 	initialColor := int(info.attrs)
 
-	charArray := bytes.Trim([]byte(text),"\x00")
-	
-	for i := 0; i < len(charArray); i++  {
+	charArray := bytes.Trim([]byte(text), "\x00")
+
+	for i := 0; i < len(charArray); i++ {
 
 		c := charArray[i]
 
 		if c == '\033' || c == 0x1B {
 			i++
 			c = charArray[i]
-       
+
 			if c == '[' {
 				i++
 				c = charArray[i]
 
-				ansiNumber := make([]byte,0)
-				if  charArray[i+1] != 'm' {
-					for j := 0; j < 2 && c != 'm'; j++  {
-						ansiNumber = append(ansiNumber,c)
+				ansiNumber := make([]byte, 0)
+				if charArray[i+1] != 'm' {
+					for j := 0; j < 2 && c != 'm'; j++ {
+						ansiNumber = append(ansiNumber, c)
 						i++
 						c = charArray[i]
 					}
 				} else {
-					ansiNumber = append(ansiNumber,c)
+					ansiNumber = append(ansiNumber, c)
 					i++
 					c = charArray[i]
 				}
-	 
-				ansiColor, _ := strconv.Atoi(string(ansiNumber));
+
+				ansiColor, _ := strconv.Atoi(string(ansiNumber))
 				var winIntensity int
 				var winColor int
-				
+
 				// Convert ANSI Color to Windows Color
-				if (ansiColor == ansiBOLD) {
-					winIntensity = w_INTENSITY;
-				} else if (ansiColor == ansiRESET) {
-					winIntensity = w_BLACK;
-					winColor = initialColor;
-				} else if (ansiBLACK <= ansiColor && ansiColor <= ansiWHITE) {
-					winColor = ansi2WIN[ansiColor - 30];
-					winIntensity = w_BLACK;
-				} else if (ansiColor == 90) {
+				if ansiColor == ansiBOLD {
+					winIntensity = w_INTENSITY
+				} else if ansiColor == ansiRESET {
+					winIntensity = w_BLACK
+					winColor = initialColor
+				} else if ansiBLACK <= ansiColor && ansiColor <= ansiWHITE {
+					winColor = ansi2WIN[ansiColor-30]
+					winIntensity = w_BLACK
+				} else if ansiColor == 90 {
 					// Special case for gray (it's really white)
-					winColor = w_WHITE;
-					winIntensity = w_BLACK;
+					winColor = w_WHITE
+					winIntensity = w_BLACK
 				}
-       
+
 				// initialColor & 0xF0 is to keep the background color
-				err = setConsoleTextAttribute(handle,winColor | winIntensity | (initialColor & 0xF0))
+				err = setConsoleTextAttribute(handle, winColor|winIntensity|(initialColor&0xF0))
 				if err != nil {
 					fmt.Println(err)
 				}
@@ -152,7 +173,6 @@ func ColorizeString(text string) {
 		}
 	}
 
-	setConsoleTextAttribute(handle,initialColor)
+	setConsoleTextAttribute(handle, initialColor)
 
 }
-
