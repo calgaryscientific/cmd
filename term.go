@@ -17,9 +17,13 @@ func RightJustifyText(text string) string {
 	
 	_, cols := size()
 
+	
 	col := cols - (len(text) + textPadding)
-
-	fmt.Printf("\033[%dG", col)
+	
+	if cols > 0 {
+		
+		fmt.Printf("\033[%dG", col)
+	}
 
 	return text
 }
@@ -34,9 +38,16 @@ func size()(rows,cols int) {
 	sz := string(out)
 	size := strings.Split(sz," ")
 
-	rows, _ = strconv.Atoi(strings.TrimSpace(size[0]))
-	cols, _ = strconv.Atoi(strings.TrimSpace(size[1]))
+	var err error
+	
+	rows, err = strconv.Atoi(strings.TrimSpace(size[0]))
+	cols, err = strconv.Atoi(strings.TrimSpace(size[1]))
 
+	if err != nil {
+		rows = 0
+		cols = 0
+	}
+	
 	return rows, cols
 }
 
