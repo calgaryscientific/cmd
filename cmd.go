@@ -7,7 +7,7 @@
 	 commander := &Cmd{...}
 	 commander.Init()
 
-         cmd := NewCommand(name,option...)
+         cmd := NewCommand(name,Option...)
 
 	 commander.Add(cmd)
 
@@ -16,20 +16,20 @@
 package cmd
 
 import (
+	"flag"
+	"fmt"
 	"github.com/gobs/args"
 	"github.com/gobs/pretty"
 	"github.com/peterh/liner"
-	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"runtime"
-	"flag"
-	"io"
 )
 
 //
@@ -44,72 +44,75 @@ type Command struct {
 	call func(*Command, string) bool
 	// list of possible sub commands
 	subCommands map[string]*Command
-	flags *flag.FlagSet
+	flags       *flag.FlagSet
 
+	cmdline *Cmd
 }
 
-type option func(command *Command)
+type Option func(command *Command)
 
-func SetHelp(help string) option {
-	return func(command* Command) {
+func SetHelp(help string) Option {
+	return func(command *Command) {
 		command.help = help
 	}
 }
 
-func SetFlag(flag string, value string, help string) option {
+func SetFlag(flag string, value string, help string) Option {
 	return func(command *Command) {
-		command.flags.String(flag,value,help)
+		command.flags.String(flag, value, help)
 	}
 }
 
-func SetBoolFlag(flag string, value bool, help string) option {
+func SetBoolFlag(flag string, value bool, help string) Option {
 	return func(command *Command) {
-		command.flags.Bool(flag,value,help)
+		command.flags.Bool(flag, value, help)
 	}
 }
 
-func SetCmd(cmd func(command *Command, line string)(stop bool)) option {
-	return func(command* Command) {
+func SetCmd(cmd func(command *Command, line string) (stop bool)) Option {
+	return func(command *Command) {
 		command.call = cmd
 	}
 }
 
-func NewCommand(name string, opts ...option) (*Command){
+func NewCommand(name string, opts ...Option) *Command {
 
 	command := &Command{
-		name: name,
-		help: "",
-		call:func(*Command, string) bool { return false },
+		name:        name,
+		help:        "",
+		call:        func(*Command, string) bool { return false },
 		subCommands: make(map[string]*Command),
-		flags: flag.NewFlagSet(name,flag.ContinueOnError) }
+		flags:       flag.NewFlagSet(name, flag.ContinueOnError)}
 
-	
 	for _, opt := range opts {
 		opt(command)
 	}
 
 	command.flags.Usage = func() {
-		fmt.Fprintf(os.Stderr,"%s -%s", command.name, command.help + "\n")
+		fmt.Fprintf(os.Stderr, "%s -%s", command.name, command.help+"\n")
 		command.flags.PrintDefaults()
 	}
 
-	
 	return command
 }
 
-func (command *Command) AddSubCommand(name string, opts ...option) {
+func (command *Command) GetCmdline() *Cmd {
+	return command.cmdline
+}
 
-	subcommand := NewCommand(name,opts...)
+func (command *Command) AddSubCommand(name string, opts ...Option) {
+
+	subcommand := NewCommand(name, opts...)
 	command.subCommands[name] = subcommand
-	
+
 	subcommand.flags.Usage = func() {
-		fmt.Fprintf(os.Stderr,"%s %s -%s", command.name, subcommand.name, subcommand.help + "\n")
+		fmt.Fprintf(os.Stderr, "%s %s -%s", command.name, subcommand.name, subcommand.help+"\n")
 		subcommand.flags.PrintDefaults()
 	}
 
 }
 
-func (command* Command) GetFlag(name string)(string) {
+func (command *Command) GetFlag(name string) string {
 	flag := command.flags.Lookup(name)
 
 	if flag != nil {
@@ -119,7 +122,7 @@ func (command* Command) GetFlag(name string)(string) {
 	return ""
 }
 
-func (command* Command) GetBoolFlag(name string)(bool) {
+func (command *Command) GetBoolFlag(name string) bool {
 	flag := command.flags.Lookup(name)
 
 	if flag != nil {
@@ -142,8 +145,6 @@ func (command *Command) Usage() {
 		subcommand.flags.Usage()
 	}
 }
-
-
 
 //
 // This the the "context" for the command interpreter
@@ -187,9 +188,8 @@ type Cmd struct {
 
 	///////// private stuff /////////////
 
-
 	readline *liner.State
-	
+
 	commandNames []string
 
 	waitGroup          *sync.WaitGroup
@@ -211,7 +211,7 @@ func (cmd *Cmd) readHistoryFile() {
 			if err != nil {
 				fmt.Println(err)
 			}
-			
+
 			f.Close()
 		}
 
@@ -222,7 +222,6 @@ func (cmd *Cmd) readHistoryFile() {
 
 	filepath = path.Join(os.Getenv("HOME"), filepath) // then check home directory
 	if _, err := os.Stat(filepath); err == nil {
-
 
 		if f, err := os.Open(filepath); err == nil {
 			fmt.Println(err)
@@ -240,7 +239,6 @@ func (cmd *Cmd) writeHistoryFile() {
 		// no history file
 		return
 	}
-
 
 	if f, err := os.Create(cmd.HistoryFile); err != nil {
 		fmt.Print("Error writing history file: ", err)
@@ -281,7 +279,7 @@ func (cmd *Cmd) Init() {
 	help := NewCommand("help",
 		SetHelp(`list available commands`),
 		SetCmd(cmd.Help))
-	
+
 	cmd.Add(help)
 	//cmd.Add(Command{"echo", `echo input line`, cmd.Echo})
 	//cmd.Add(Command{"go", `go cmd: asynchronous execution of cmd, or 'go [--start|--wait]'`, cmd.Go})
@@ -318,17 +316,17 @@ func shellExec(command string) {
 	if len(args) < 1 {
 		fmt.Println("No command to exec")
 	} else {
-		var cmd *exec.Cmd;
+		var cmd *exec.Cmd
 
 		if runtime.GOOS == "windows" {
-			cmdArgs := []string{"cmd","/C"}
-			cmdArgs = append(cmdArgs,args...)
-			cmd = exec.Command(cmdArgs[0],cmdArgs[1:]...)
+			cmdArgs := []string{"cmd", "/C"}
+			cmdArgs = append(cmdArgs, args...)
+			cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
 		} else {
 			cmd = exec.Command(args[0])
 			cmd.Args = args
 		}
-		
+
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -349,7 +347,7 @@ func (cmd *Cmd) Add(command *Command) {
 // Default help command.
 // It lists all available commands or it displays the help for the specified command
 //
-func (cmd *Cmd) Help(command* Command,line string) (stop bool) {
+func (cmd *Cmd) Help(command *Command, line string) (stop bool) {
 	fmt.Println("")
 
 	if len(line) == 0 {
@@ -365,11 +363,8 @@ func (cmd *Cmd) Help(command* Command,line string) (stop bool) {
 		tp.Println()
 	} else {
 
-		
+		args := strings.Split(line, " ")
 
-		args := strings.Split(line," ")
-
-		
 		if len(args) > 1 {
 
 			if c, ok := cmd.Commands[args[0]]; ok {
@@ -385,10 +380,9 @@ func (cmd *Cmd) Help(command* Command,line string) (stop bool) {
 					fmt.Println("unknown command")
 				}
 			}
-			
-			
+
 		} else {
-			
+
 			c, ok := cmd.Commands[line]
 			if ok {
 				if len(c.help) > 0 {
@@ -483,11 +477,10 @@ func (cmd *Cmd) OneCmd(line string) (stop bool) {
 
 	if ok {
 		var params string
-		
+
 		if len(parts) > 1 {
 			splitLine := strings.SplitN(parts[1], " ", 2)
 			subcmd := splitLine[0]
-
 
 			subcommand, ok := command.subCommands[subcmd]
 			if ok {
@@ -496,29 +489,30 @@ func (cmd *Cmd) OneCmd(line string) (stop bool) {
 					params = strings.TrimSpace(splitLine[1])
 				}
 
-				args := strings.Split(line," ")
+				args := strings.Split(line, " ")
 				subcommand.flags.Parse(args[2:])
 
-				stop = subcommand.call(subcommand,params)
+				subcommand.cmdline = cmd
+				stop = subcommand.call(subcommand, params)
 
 				subcommand.flags.VisitAll(func(flag *flag.Flag) {
 					flag.Value.Set(flag.DefValue)
 				})
 				return
 			}
-						
 
 			params = strings.TrimSpace(parts[1])
 		}
 
-		args := strings.Split(line," ")
+		args := strings.Split(line, " ")
 		command.flags.Parse(args[1:])
-		stop = command.call(command,params)
+		command.cmdline = cmd
+		stop = command.call(command, params)
 
 		command.flags.VisitAll(func(flag *flag.Flag) {
 			flag.Value.Set(flag.DefValue)
 		})
-		
+
 	} else {
 		cmd.Default(line)
 	}
@@ -547,13 +541,13 @@ func (cmd *Cmd) CmdLoop() {
 		if err != nil {
 
 			if err == io.EOF {
-				break;
+				break
 			}
-			
+
 			fmt.Println(err)
 			continue
 		}
-		
+
 		line := strings.TrimSpace(result)
 		if line == "" {
 			cmd.EmptyLine()
