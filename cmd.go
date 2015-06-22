@@ -38,6 +38,8 @@ import (
 type Command struct {
 	// command name
 	name string
+	// command alias
+	alias string
 	// command description
 	help string
 	// the function to call to execute the command
@@ -50,6 +52,12 @@ type Command struct {
 }
 
 type Option func(command *Command)
+
+func SetCmdAlias(alias string) Option {
+	return func(command *Command) {
+		command.alias = alias
+	}
+}
 
 func SetHelp(help string) Option {
 	return func(command *Command) {
@@ -89,8 +97,12 @@ func NewCommand(name string, opts ...Option) *Command {
 	}
 
 	command.flags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "%s -%s", command.name, command.help+"\n")
+		fmt.Fprintf(os.Stderr, "%s -%s", command.alias, command.help+"\n")
 		command.flags.PrintDefaults()
+	}
+
+	if len(command.alias) == 0 {
+		command.alias = command.name
 	}
 
 	return command
@@ -103,13 +115,21 @@ func (command *Command) GetCmdline() *Cmd {
 func (command *Command) AddSubCommand(name string, opts ...Option) {
 
 	subcommand := NewCommand(name, opts...)
-	command.subCommands[name] = subcommand
+
+	if len(subcommand.alias) > 0 && subcommand.alias != subcommand.name {
+		command.subCommands[subcommand.alias] = subcommand
+	} else {
+		command.subCommands[subcommand.name] = subcommand
+	}
 
 	subcommand.flags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "%s %s -%s", command.name, subcommand.name, subcommand.help+"\n")
+		fmt.Fprintf(os.Stderr, "%s %s -%s", command.alias, subcommand.alias, subcommand.help+"\n")
 		subcommand.flags.PrintDefaults()
 	}
 
+	if len(command.alias) == 0 {
+		subcommand.alias = subcommand.name
+	}
 }
 
 func (command *Command) GetFlag(name string) string {
@@ -340,7 +360,11 @@ func shellExec(command string) {
 // Overrides a command with the same name, if there was one
 //
 func (cmd *Cmd) Add(command *Command) {
-	cmd.Commands[command.name] = command
+	if len(command.alias) > 0 && command.alias != command.name {
+		cmd.Commands[command.alias] = command
+	} else {
+		cmd.Commands[command.name] = command
+	}
 }
 
 //
