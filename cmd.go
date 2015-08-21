@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
@@ -98,7 +99,7 @@ func NewCommand(name string, opts ...Option) *Command {
 
 	command.flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "%s -%s", command.alias, command.help+"\n")
-		PrintDefaults(command.flags)
+		//PrintDefaults(command.flags)
 	}
 
 	if len(command.alias) == 0 {
@@ -111,7 +112,11 @@ func NewCommand(name string, opts ...Option) *Command {
 //Prints the default values of all defined flags in the set.
 func PrintDefaults(f *flag.FlagSet) {
 	f.VisitAll(func(flag *flag.Flag) {
-		fmt.Println(fmt.Sprintf("-%s %s", flag.Name, flag.Usage))
+		if reflect.TypeOf(flag.Value).String() == "*flag.boolValue" {
+			fmt.Println(fmt.Sprintf("-%s %s", flag.Name, flag.Usage))
+		} else {
+			fmt.Println(fmt.Sprintf("-%s=%s %s", flag.Name, flag.DefValue, flag.Usage))
+		}
 	})
 }
 
@@ -131,7 +136,7 @@ func (command *Command) AddSubCommand(name string, opts ...Option) {
 
 	subcommand.flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "%s %s -%s", command.alias, subcommand.alias, subcommand.help+"\n")
-		subcommand.flags.PrintDefaults()
+		PrintDefaults(subcommand.flags)
 	}
 
 	if len(command.alias) == 0 {
