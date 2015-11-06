@@ -226,6 +226,8 @@ type Cmd struct {
 
 	waitGroup          *sync.WaitGroup
 	waitMax, waitCount int
+
+	restartLoop bool
 }
 
 func (cmd *Cmd) readHistoryFile() {
@@ -606,4 +608,18 @@ func (cmd *Cmd) CmdLoop() {
 	cmd.writeHistoryFile()
 
 	cmd.PostLoop()
+}
+
+func (cmd *Cmd) SetRestartLoop(restart bool) {
+	cmd.restartLoop = restart
+}
+
+func (cmd *Cmd) GetRestartLoop() bool {
+	return cmd.restartLoop
+}
+
+func (cmd *Cmd) RestartLoop() {
+	cmd.PreLoop = func() {}
+	cmd.restartLoop = false
+	cmd.CmdLoop()
 }
