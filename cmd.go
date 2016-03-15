@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 )
 
 //
@@ -499,6 +500,36 @@ func (cmd *Cmd) Go(line string) (stop bool) {
 	return
 }
 
+// Simple processing of quotes strings in command line args
+// This just treats a quotes string as a indivisible piece
+func processQuotes(line string) (args []string) {
+
+	lastQuote := rune(0)
+
+	f := func(ch rune) bool {
+		switch {
+		case ch == lastQuote:
+			lastQuote = rune(0)
+			return false
+		case lastQuote != rune(0):
+			return false
+		case unicode.In(ch, unicode.Quotation_Mark):
+			lastQuote = ch
+			return false
+		default:
+			return unicode.IsSpace(ch)
+		}
+	}
+
+	args = strings.FieldsFunc(line, f)
+
+	for i, arg := range args {
+		args[i] = strings.Replace(arg, "\"", "", -1)
+	}
+
+	return args
+}
+
 //
 // This method executes one command
 //
@@ -528,7 +559,10 @@ func (cmd *Cmd) OneCmd(line string) (stop bool) {
 					params = strings.TrimSpace(splitLine[1])
 				}
 
-				args := strings.Split(line, " ")
+				//args := strings.Split(line, " ")
+
+				args := processQuotes(line)
+
 				subcommand.flags.Parse(args[2:])
 
 				subcommand.cmdline = cmd
@@ -543,7 +577,7 @@ func (cmd *Cmd) OneCmd(line string) (stop bool) {
 			params = strings.TrimSpace(parts[1])
 		}
 
-		args := strings.Split(line, " ")
+		args := processQuotes(line)
 		command.flags.Parse(args[1:])
 		command.cmdline = cmd
 		stop = command.call(command, params)
